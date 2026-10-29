@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: rigwise-api
-    runtime: docker
-    plan: free
-    envVars:
-      - key: CORS_ORIGINS
-        value: https://YOUR-USERNAME.github.io   # origin only, no /repo-name

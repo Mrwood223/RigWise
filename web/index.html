@@ -39,31 +39,22 @@ svg.spark{width:90px;height:26px;vertical-align:middle}
   <input id="q" type="search" placeholder="Search parts" aria-label="Search parts">
   <select id="cat" aria-label="Category"></select>
 </div>
-<div class="tbl" id="tracker"><p style="padding:1rem;margin:0">Loading prices. A free server can take up to 30 seconds to wake up.</p></div>
+<div class="tbl" id="tracker"><p style="padding:1rem;margin:0">Loading prices.</p></div>
 
 <h2>Budget builder</h2>
 <div class="bar">
-  <label>Budget ($) <input id="budget" type="number" min="500" max="10000" step="50" value="1200"></label>
+  <label>Budget ($) <input id="budget" type="number" min="500" max="5000" step="50" value="1200"></label>
   <label>Focus <select id="focus"><option value="gaming">Gaming</option><option value="work">Workstation</option></select></label>
   <button id="go">Build it</button>
 </div>
 <div class="panel" id="out" aria-live="polite">Set a budget and press Build it.</div>
-<p class="note">Prices are mock data until a live provider is connected.</p>
+<p class="note"><span id="updated"></span> Prices are sample data until a live provider is connected. Builds are matched to the nearest $50 at or below your budget.</p>
 </main>
 
-<script src="config.js"></script>
 <script>
-const API = (window.RIGWISE_API || "").replace(/\/$/, "");
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let parts = [];
-
-async function api(path, opts) {
-  const r = await fetch(API + path, opts);
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : "Check your inputs and try again.");
-  return j;
-}
+let data = null, parts = [];
 
 function spark(a) {
   if (a.length < 2) return "";
@@ -87,29 +78,30 @@ function renderTracker() {
 
 async function load() {
   try {
-    parts = await api("/parts");
+    const r = await fetch("data.json", {cache: "no-cache"});
+    if (!r.ok) throw new Error("bad status");
+    data = await r.json(); parts = data.parts;
+    $("updated").textContent = "Prices updated " + new Date(data.updated).toLocaleDateString(undefined, {year: "numeric", month: "short", day: "numeric"}) + ".";
     $("cat").innerHTML = ["All", ...new Set(parts.map(p => p.category))].map(c => `<option>${esc(c)}</option>`).join("");
     renderTracker();
   } catch (e) {
-    $("tracker").innerHTML = `<p class="err" style="padding:1rem;margin:0">Could not reach the API at ${esc(API || "this server")}. Check that it is running, then <button id="retry">Retry</button></p>`;
+    $("tracker").innerHTML = `<p class="err" style="padding:1rem;margin:0">Could not load data.json. Run <code>python -m scripts.export_static</code> to generate it, then <button id="retry">Retry</button></p>`;
     $("retry").onclick = load;
   }
 }
 $("q").oninput = renderTracker;
 $("cat").onchange = renderTracker;
 
-$("go").onclick = async () => {
-  const btn = $("go"); btn.disabled = true;
-  try {
-    const res = await api("/build", {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({budget: +$("budget").value, focus: $("focus").value})});
-    $("out").innerHTML = `<div class="tbl"><table style="min-width:0"><tbody>${res.parts.map(p =>
-      `<tr><td>${esc(p.category)}</td><td>${esc(p.name)}</td><td>$${p.price}</td></tr>`).join("")}</tbody></table></div>
-      <p class="total">$${res.cost} of $${+$("budget").value}</p>
-      <p class="spec">Sockets and RAM type match, and the PSU has headroom for CPU plus GPU draw.</p>`;
-  } catch (e) {
-    $("out").innerHTML = `<span class="err">${esc(e.message)}</span>`;
-  } finally { btn.disabled = false; }
+$("go").onclick = () => {
+  if (!data) return;
+  const raw = +$("budget").value;
+  if (!(raw >= 500 && raw <= 5000)) { $("out").innerHTML = '<span class="err">Enter a budget between $500 and $5,000.</span>'; return; }
+  const b = Math.floor(raw / 50) * 50, res = data.builds[$("focus").value][b];
+  if (!res) { $("out").innerHTML = `<span class="err">No compatible build fits $${b}. Try a higher budget.</span>`; return; }
+  $("out").innerHTML = `<div class="tbl"><table style="min-width:0"><tbody>${res.parts.map(p =>
+    `<tr><td>${esc(p.category)}</td><td>${esc(p.name)}</td><td>$${p.price}</td></tr>`).join("")}</tbody></table></div>
+    <p class="total">$${res.cost} of $${b}</p>
+    <p class="spec">Sockets and RAM type match, and the PSU has headroom for CPU plus GPU draw.</p>`;
 };
 load();
 </script>

@@ -1,49 +1,50 @@
 # Rigwise
 
 Track PC part prices across retailers and turn a budget into a compatible build.
+**Live site:** _add your GitHub Pages link here_
 
-**Stack:** Python 3.12, FastAPI, SQLAlchemy 2, SQLite, pytest, Docker, GitHub Actions
-**Frontend:** GitHub Pages. **API:** Render (see Deploy).
+**Stack:** Python 3.12, SQLAlchemy, FastAPI, pytest, GitHub Actions, GitHub Pages, vanilla JS
+
+## How it works
+```
+GitHub Actions (daily cron)
+  -> scripts/export_static.py   collect prices, append to data/snapshots.json
+                                precompute the best build for every $50 budget
+  -> web/data.json              committed back to the repo
+  -> GitHub Pages               static frontend reads data.json
+```
+There is no server to host. Price history lives in the repo as `data/snapshots.json`, so it survives every deploy. The optimizer runs only in Python and is unit tested. The browser just looks up the result.
 
 ## Features
-- Append-only price history per part and store, so trends come from real snapshots
-- Pluggable `PriceProvider` interface for the collector (a mock ships by default)
+- Daily price snapshots (90-day window) with per-part trend sparklines
+- Pluggable `PriceProvider` interface (a mock ships by default)
 - Budget optimizer: exhaustive search over compatible combos with socket, RAM type and PSU-headroom checks
-- REST API with auto-generated docs at `/docs`
+- Optional FastAPI server (`app/main.py`) exposing the same data over REST at `/docs`
 
-## Run
+## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload     # http://localhost:8000/docs
+python -m scripts.export_static        # writes web/data.json
+python -m http.server -d web 8000      # open http://localhost:8000
 pytest -q
-docker build -t rigwise . && docker run -p 8000:8000 rigwise
 ```
+Optional live API: `uvicorn app.main:app --reload` (serves the same page and `/docs`).
 
 ## Deploy
-GitHub Pages is static, so the frontend and API are hosted separately.
-1. **API:** create a Render web service from this repo (it reads `render.yaml`). Set `CORS_ORIGINS` to `https://YOUR-USERNAME.github.io`. Copy the service URL.
-2. **Frontend:** in GitHub go to Settings > Secrets and variables > Actions > Variables and add `API_URL` with that URL. Then Settings > Pages > Source: GitHub Actions. Push to `main` and the workflow publishes `web/`.
-
-Locally, `uvicorn` serves the frontend and API together at `http://localhost:8000`.
-The free Render tier sleeps when idle and resets its SQLite file, so the mock data reseeds on each wake-up.
-
-## API
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/parts?category=GPU&q=4070` | Parts with latest price per store and best store |
-| GET | `/parts/{id}/history` | Price snapshots over time |
-| POST | `/build` | `{"budget": 1200, "focus": "gaming"}` returns a build |
+1. Push to GitHub with `main` as the default branch.
+2. Settings > Pages > Source: **GitHub Actions**.
+3. Settings > Actions > General > Workflow permissions: **Read and write**.
+4. Run the workflow once from the Actions tab (Collect prices and deploy). It then runs daily.
 
 ## Design notes
-- **Optimizer is pure Python** (`app/optimizer.py`) with no DB or web imports, so it is unit tested directly.
+- **Precomputed builds:** budgets are discrete ($50 steps), so 182 builds are computed once per run. This keeps one optimizer implementation instead of a Python and a JS copy.
 - **Search is brute force** (~1.7k combos). For a bigger catalogue, prune by price or move to OR-Tools CP-SAT.
-- **Prices are mock data.** Implement `PriceProvider.fetch` against a retailer or affiliate API; check each store's terms before scraping.
+- **Prices are mock data.** Implement `PriceProvider.fetch` against a retailer or affiliate API, and check each store's terms before scraping.
 
 ## Roadmap
-- [ ] Real provider and a scheduled collection job (GitHub Actions cron)
-- [ ] Price-drop alerts by email
-- [ ] Cases and coolers with clearance and size checks
-- [ ] Postgres and Alembic migrations
-- [x] Frontend wired to the API
+- [x] Static pipeline with scheduled collection
+- [ ] Real price provider
+- [ ] Price-drop alerts
+- [ ] Cases and coolers with clearance checks
 - [ ] Per-part history chart view

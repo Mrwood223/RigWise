@@ -1,0 +1,37 @@
+name: Collect prices and deploy
+on:
+  schedule: [{ cron: "0 6 * * *" }]
+  push:
+    branches: [main]
+    paths: ["web/**", "scripts/**", "app/**", ".github/workflows/pipeline.yml"]
+  workflow_dispatch:
+concurrency: { group: pipeline, cancel-in-progress: false }
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: python -m scripts.export_static
+      - name: Commit new data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data web/data.json
+          git diff --cached --quiet || (git commit -m "chore: update prices" && git push)
+  deploy:
+    needs: collect
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.deployment.outputs.page_url }}" }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ github.event.repository.default_branch }}" }  # pick up the data commit
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: web }
+      - id: deployment
+        uses: actions/deploy-pages@v4
