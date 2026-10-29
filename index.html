@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rigwise – PC part prices and budget builds</title>
+<style>
+:root{--bg:#f3f5f2;--surface:#fff;--ink:#17201b;--muted:#5d6b63;--line:#d5dcd6;--accent:#0b7a53;--accent-ink:#fff;--low:#0b7a53;--high:#b3402a;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121815;--surface:#1b2420;--ink:#e8efe9;--muted:#9aaaa0;--line:#2e3b34;--accent:#4cc795;--accent-ink:#0c1411;--low:#4cc795;--high:#ee8a74;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif;padding:0 1rem 3rem}
+main{max-width:1000px;margin:0 auto}
+h1{font:700 2.1rem/1.1 Georgia,"Times New Roman",serif;margin:2rem 0 .4rem}
+h2{font:700 1.3rem Georgia,serif;margin:2.2rem 0 .8rem}
+p.lede{color:var(--muted);margin:0;max-width:60ch}
+.bar{display:flex;gap:.6rem;flex-wrap:wrap;margin:1rem 0}
+input,select,button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:.5rem .7rem}
+button{cursor:pointer;background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:720px}
+th,td{padding:.6rem .8rem;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:600;color:var(--muted);font-size:.9rem}
+tr:last-child td{border-bottom:0}
+td.best{font-weight:700;color:var(--low)}
+.spec{color:var(--muted);font-size:.85rem}
+svg.spark{width:90px;height:26px;vertical-align:middle}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:1rem}
+.total{font:700 1.6rem Georgia,serif;margin:.6rem 0 0}
+.note{color:var(--muted);font-size:.85rem;margin-top:1rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Rigwise</h1>
+<p class="lede">Compare prices across retailers, watch the trend, and turn a budget into a compatible build.</p>
+
+<h2>Price tracker</h2>
+<div class="bar">
+  <input id="q" type="search" placeholder="Search parts" aria-label="Search parts">
+  <select id="cat" aria-label="Category"></select>
+</div>
+<div class="tbl"><table>
+  <thead><tr><th>Part</th><th>Amazon</th><th>Newegg</th><th>Micro Center</th><th>B&amp;H</th><th>Best store</th><th>30-day trend</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table></div>
+
+<h2>Budget builder</h2>
+<div class="bar">
+  <label>Budget ($) <input id="budget" type="number" min="500" max="5000" step="50" value="1200"></label>
+  <label>Focus <select id="focus"><option value="gaming">Gaming</option><option value="work">Workstation</option></select></label>
+  <button id="go">Build it</button>
+</div>
+<div class="panel" id="out" aria-live="polite">Set a budget and press Build it.</div>
+<p class="note">Prices and trends are sample data. Swap <code>PARTS</code> for a live API or scraper (see README) to track real prices. Case and cooler are not included.</p>
+</main>
+
+<script>
+const STORES=["Amazon","Newegg","Micro Center","B&H"];
+// type, name, perf (0-100), specs, [prices per store]
+const PARTS=[
+ {t:"CPU",n:"Ryzen 5 7600",p:70,socket:"AM5",w:65,pr:[199,205,179,209]},
+ {t:"CPU",n:"Ryzen 7 7800X3D",p:92,socket:"AM5",w:120,pr:[389,399,369,395]},
+ {t:"CPU",n:"Core i5-12400F",p:55,socket:"LGA1700",w:65,pr:[140,145,129,149]},
+ {t:"CPU",n:"Core i5-14600K",p:80,socket:"LGA1700",w:125,pr:[279,285,269,289]},
+ {t:"GPU",n:"GeForce RTX 4060",p:45,w:115,pr:[299,305,289,309]},
+ {t:"GPU",n:"Radeon RX 7700 XT",p:62,w:245,pr:[399,389,379,405]},
+ {t:"GPU",n:"GeForce RTX 4070 Super",p:75,w:220,pr:[599,589,609,599]},
+ {t:"GPU",n:"Radeon RX 7900 XT",p:88,w:315,pr:[699,709,679,715]},
+ {t:"Motherboard",n:"B650 (AM5, DDR5)",socket:"AM5",ram:"DDR5",pr:[159,165,149,169]},
+ {t:"Motherboard",n:"B760 (LGA1700, DDR4)",socket:"LGA1700",ram:"DDR4",pr:[119,125,109,129]},
+ {t:"Motherboard",n:"B760 (LGA1700, DDR5)",socket:"LGA1700",ram:"DDR5",pr:[149,155,139,159]},
+ {t:"Memory",n:"16GB DDR4-3200",p:50,ram:"DDR4",pr:[38,42,36,45]},
+ {t:"Memory",n:"32GB DDR4-3200",p:80,ram:"DDR4",pr:[70,75,66,79]},
+ {t:"Memory",n:"16GB DDR5-6000",p:55,ram:"DDR5",pr:[64,69,59,72]},
+ {t:"Memory",n:"32GB DDR5-6000",p:85,ram:"DDR5",pr:[99,105,95,109]},
+ {t:"Storage",n:"500GB NVMe",p:40,pr:[42,45,40,48]},
+ {t:"Storage",n:"1TB NVMe",p:65,pr:[72,75,69,79]},
+ {t:"Storage",n:"2TB NVMe",p:85,pr:[129,135,125,139]},
+ {t:"Power supply",n:"550W 80+ Bronze",watts:550,pr:[59,62,55,65]},
+ {t:"Power supply",n:"750W 80+ Gold",watts:750,pr:[89,92,85,95]},
+ {t:"Power supply",n:"850W 80+ Gold",watts:850,pr:[119,125,115,129]}
+];
+const best=x=>{const m=Math.min(...x.pr);return{price:m,store:STORES[x.pr.indexOf(m)]}};
+const $=id=>document.getElementById(id);
+
+// Deterministic fake 30-day history so the demo is stable
+function history(x){let s=x.n.length*7,a=[];for(let i=0;i<8;i++){s=(s*9301+49297)%233280;a.push(best(x).price*(1+(s/233280-.4)*.12))}a[7]=best(x).price;return a}
+function spark(a){const mn=Math.min(...a),mx=Math.max(...a),r=mx-mn||1;
+ const pts=a.map((v,i)=>`${i*12.8},${24-((v-mn)/r)*22}`).join(" ");
+ const c=a[7]<=a[0]?"var(--low)":"var(--high)";
+ return `<svg class="spark" viewBox="0 0 90 26" role="img" aria-label="${a[7]<=a[0]?'Price down':'Price up'} over 30 days"><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2"/></svg>`}
+
+$("cat").innerHTML=["All",...new Set(PARTS.map(p=>p.t))].map(c=>`<option>${c}</option>`).join("");
+function render(){
+ const q=$("q").value.toLowerCase(),c=$("cat").value;
+ $("rows").innerHTML=PARTS.filter(p=>(c==="All"||p.t===c)&&p.n.toLowerCase().includes(q)).map(p=>{
+  const b=best(p);
+  return `<tr><td>${p.n}<div class="spec">${p.t}</div></td>${p.pr.map(v=>`<td class="${v===b.price?'best':''}">$${v}</td>`).join("")}<td>${b.store}</td><td>${spark(history(p))}</td></tr>`}).join("")||`<tr><td colspan="7">No parts match. Clear the search or pick another category.</td></tr>`;
+}
+$("q").oninput=render;$("cat").onchange=render;render();
+
+// Budget builder: exhaustive search over compatible combos, maximise weighted score under budget
+const by=t=>PARTS.filter(p=>p.t===t);
+const W={gaming:{cpu:.25,gpu:.5,ram:.15,ssd:.1},work:{cpu:.4,gpu:.2,ram:.25,ssd:.15}};
+function build(budget,focus){
+ const w=W[focus];let top=null;
+ for(const c of by("CPU"))for(const m of by("Motherboard")){
+  if(m.socket!==c.socket)continue;
+  for(const r of by("Memory")){if(r.ram!==m.ram)continue;
+   for(const g of by("GPU"))for(const s of by("Storage"))for(const u of by("Power supply")){
+    if(u.watts<(c.w+g.w)*1.6+50)continue; // headroom rule
+    const cost=[c,m,r,g,s,u].reduce((a,x)=>a+best(x).price,0);
+    if(cost>budget)continue;
+    const score=c.p*w.cpu+g.p*w.gpu+r.p*w.ram+s.p*w.ssd;
+    if(!top||score>top.score||(score===top.score&&cost<top.cost))top={score,cost,parts:[c,m,r,g,s,u]};
+   }}}
+ return top;
+}
+$("go").onclick=()=>{
+ const b=+$("budget").value,res=build(b,$("focus").value);
+ if(!res){$("out").textContent=`No compatible build fits $${b}. Raise the budget to at least $700.`;return}
+ $("out").innerHTML=`<div class="tbl"><table><tbody>${res.parts.map(p=>{const x=best(p);return `<tr><td>${p.t}</td><td>${p.n}</td><td>$${x.price}</td><td>${x.store}</td></tr>`}).join("")}</tbody></table></div>
+ <p class="total">$${res.cost} of $${b}</p><p class="spec">Sockets and RAM type match, and the PSU has headroom for CPU plus GPU draw.</p>`;
+};
+</script>
+</body>
+</html>
