@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.venv/
+rigwise.db
+.pytest_cache/

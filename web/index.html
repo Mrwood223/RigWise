@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rigwise – PC part prices and budget builds</title>
+<style>
+:root{--bg:#f3f5f2;--surface:#fff;--ink:#17201b;--muted:#5d6b63;--line:#d5dcd6;--accent:#0b7a53;--accent-ink:#fff;--low:#0b7a53;--high:#b3402a;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#121815;--surface:#1b2420;--ink:#e8efe9;--muted:#9aaaa0;--line:#2e3b34;--accent:#4cc795;--accent-ink:#0c1411;--low:#4cc795;--high:#ee8a74;color-scheme:dark}}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif;padding:0 1rem 3rem}
+main{max-width:1000px;margin:0 auto}
+h1{font:700 2.1rem/1.1 Georgia,"Times New Roman",serif;margin:2rem 0 .4rem}
+h2{font:700 1.3rem Georgia,serif;margin:2.2rem 0 .8rem}
+.lede,.spec,.note{color:var(--muted)}.lede{margin:0;max-width:60ch}.spec{font-size:.85rem}.note{font-size:.85rem;margin-top:1rem}
+.bar{display:flex;gap:.6rem;flex-wrap:wrap;margin:1rem 0;align-items:center}
+input,select,button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:.5rem .7rem}
+button{cursor:pointer;background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.6;cursor:wait}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:720px}
+th,td{padding:.6rem .8rem;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:600;color:var(--muted);font-size:.9rem}tr:last-child td{border-bottom:0}
+td.best{font-weight:700;color:var(--low)}
+svg.spark{width:90px;height:26px;vertical-align:middle}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:1rem}
+.total{font:700 1.6rem Georgia,serif;margin:.6rem 0 0}
+.err{color:var(--high)}
+</style>
+</head>
+<body>
+<main>
+<h1>Rigwise</h1>
+<p class="lede">Compare prices across retailers, watch the trend, and turn a budget into a compatible build.</p>
+
+<h2>Price tracker</h2>
+<div class="bar">
+  <input id="q" type="search" placeholder="Search parts" aria-label="Search parts">
+  <select id="cat" aria-label="Category"></select>
+</div>
+<div class="tbl" id="tracker"><p style="padding:1rem;margin:0">Loading prices. A free server can take up to 30 seconds to wake up.</p></div>
+
+<h2>Budget builder</h2>
+<div class="bar">
+  <label>Budget ($) <input id="budget" type="number" min="500" max="10000" step="50" value="1200"></label>
+  <label>Focus <select id="focus"><option value="gaming">Gaming</option><option value="work">Workstation</option></select></label>
+  <button id="go">Build it</button>
+</div>
+<div class="panel" id="out" aria-live="polite">Set a budget and press Build it.</div>
+<p class="note">Prices are mock data until a live provider is connected.</p>
+</main>
+
+<script src="config.js"></script>
+<script>
+const API = (window.RIGWISE_API || "").replace(/\/$/, "");
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let parts = [];
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : "Check your inputs and try again.");
+  return j;
+}
+
+function spark(a) {
+  if (a.length < 2) return "";
+  const mn = Math.min(...a), mx = Math.max(...a), r = mx - mn || 1, step = 90 / (a.length - 1);
+  const pts = a.map((v, i) => `${(i * step).toFixed(1)},${(24 - (v - mn) / r * 22).toFixed(1)}`).join(" ");
+  const down = a[a.length - 1] <= a[0];
+  return `<svg class="spark" viewBox="0 0 90 26" role="img" aria-label="Price ${down ? "down" : "up"} over the period"><polyline points="${pts}" fill="none" stroke="${down ? "var(--low)" : "var(--high)"}" stroke-width="2"/></svg>`;
+}
+
+function renderTracker() {
+  const q = $("q").value.toLowerCase(), c = $("cat").value;
+  const stores = [...new Set(parts.flatMap(p => Object.keys(p.prices)))].sort();
+  const rows = parts.filter(p => (c === "All" || p.category === c) && p.name.toLowerCase().includes(q));
+  $("tracker").innerHTML = `<table><thead><tr><th>Part</th>${stores.map(s => `<th>${esc(s)}</th>`).join("")}<th>Best store</th><th>Trend</th></tr></thead><tbody>${
+    rows.map(p => `<tr><td>${esc(p.name)}<div class="spec">${esc(p.category)}</div></td>${
+      stores.map(s => `<td class="${p.prices[s] === p.best_price ? "best" : ""}">${s in p.prices ? "$" + p.prices[s] : "–"}</td>`).join("")
+    }<td>${esc(p.best_store ?? "–")}</td><td>${spark(p.trend)}</td></tr>`).join("")
+    || `<tr><td colspan="${stores.length + 3}">No parts match. Clear the search or pick another category.</td></tr>`
+  }</tbody></table>`;
+}
+
+async function load() {
+  try {
+    parts = await api("/parts");
+    $("cat").innerHTML = ["All", ...new Set(parts.map(p => p.category))].map(c => `<option>${esc(c)}</option>`).join("");
+    renderTracker();
+  } catch (e) {
+    $("tracker").innerHTML = `<p class="err" style="padding:1rem;margin:0">Could not reach the API at ${esc(API || "this server")}. Check that it is running, then <button id="retry">Retry</button></p>`;
+    $("retry").onclick = load;
+  }
+}
+$("q").oninput = renderTracker;
+$("cat").onchange = renderTracker;
+
+$("go").onclick = async () => {
+  const btn = $("go"); btn.disabled = true;
+  try {
+    const res = await api("/build", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({budget: +$("budget").value, focus: $("focus").value})});
+    $("out").innerHTML = `<div class="tbl"><table style="min-width:0"><tbody>${res.parts.map(p =>
+      `<tr><td>${esc(p.category)}</td><td>${esc(p.name)}</td><td>$${p.price}</td></tr>`).join("")}</tbody></table></div>
+      <p class="total">$${res.cost} of $${+$("budget").value}</p>
+      <p class="spec">Sockets and RAM type match, and the PSU has headroom for CPU plus GPU draw.</p>`;
+  } catch (e) {
+    $("out").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally { btn.disabled = false; }
+};
+load();
+</script>
+</body>
+</html>
